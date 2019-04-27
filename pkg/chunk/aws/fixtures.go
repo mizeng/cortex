@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/testutils"
 	"github.com/cortexproject/cortex/pkg/util"
@@ -75,6 +77,8 @@ func dynamoDBFixture(provisionedErr, gangsize, maxParallelism int) testutils.Fix
 					},
 				},
 				DynamoDB:                dynamoDB,
+				readThrottle:            rate.NewLimiter(10, dynamoDBMaxReadBatchSize),
+				writeThrottle:           rate.NewLimiter(10, dynamoDBMaxWriteBatchSize),
 				queryRequestFn:          dynamoDB.queryRequest,
 				batchGetItemRequestFn:   dynamoDB.batchGetItemRequest,
 				batchWriteItemRequestFn: dynamoDB.batchWriteItemRequest,
