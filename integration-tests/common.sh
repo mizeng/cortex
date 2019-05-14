@@ -9,6 +9,11 @@ STORAGE_ARGS="-config-yaml=/tests/schema1.yaml -dynamodb.url=dynamodb://u:p@dyna
 INGESTER_ARGS="$COMMON_ARGS $STORAGE_ARGS -ingester.num-tokens=4 -ingester.min-ready-duration=1s --ingester.final-sleep=0s -ingester.concurrent-flushes=5"
 RUN_ARGS="--net=cortex -v $TEST_DIR:/tests"
 
+# Run curl on the same network as the test containers (on CircleCI this is not connected to the host)
+run_curl() {
+    docker run $RUN_ARGS --rm byrnedo/alpine-curl "$@"
+}
+
 # Execute command $1 repeatedly until it returns true; description in $2, optional repeat limit in $3
 wait_for() {
     reps=${3:-10}

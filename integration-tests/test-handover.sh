@@ -12,10 +12,10 @@ echo Start first ingester
 docker run $RUN_ARGS -d --name=i1 --hostname=i1 quay.io/cortexproject/ingester:$IMAGE_TAG $INGESTER_ARGS -ingester.claim-on-rollout=true
 
 I1_ADDR=$(container_ip i1)
-wait_for "curl -s -f -m 3 $I1_ADDR:/ready" "ingester ready"
+wait_for "run_curl -s -f -m 3 $I1_ADDR:/ready" "ingester ready"
 
 has_tokens_owned() {
-    curl -s -f -m 3 $1:/metrics | grep -q 'cortex_ring_tokens_owned'
+    run_curl -s -f -m 3 $1:/metrics | grep -q 'cortex_ring_tokens_owned'
 }
 DIST_ADDR=$(container_ip distributor)
 wait_for "has_tokens_owned $DIST_ADDR" "distributor to see ingester in ring"
