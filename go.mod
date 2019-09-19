@@ -23,6 +23,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/fluent/fluent-logger-golang v1.2.1 // indirect
+	github.com/fortytw2/leaktest v1.3.0 // indirect
 	github.com/fsouza/fake-gcs-server v1.3.0
 	github.com/go-kit/kit v0.9.0
 	github.com/gocql/gocql v0.0.0-20180113133114-697e7c57f99b
@@ -48,6 +49,7 @@ require (
 	github.com/lib/pq v1.0.0
 	github.com/mattes/migrate v1.3.1
 	github.com/mattn/go-sqlite3 v1.10.0 // indirect
+	github.com/olivere/elastic v6.2.23+incompatible
 	github.com/opentracing-contrib/go-grpc v0.0.0-20180928155321-4b5a12d3ff02
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9
 	github.com/opentracing/opentracing-go v1.1.0
