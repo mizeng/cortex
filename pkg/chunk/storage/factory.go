@@ -11,6 +11,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/aws"
 	"github.com/cortexproject/cortex/pkg/chunk/cache"
 	"github.com/cortexproject/cortex/pkg/chunk/cassandra"
+	"github.com/cortexproject/cortex/pkg/chunk/elastic"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
 	"github.com/cortexproject/cortex/pkg/chunk/local"
 	"github.com/cortexproject/cortex/pkg/util"
@@ -40,6 +41,7 @@ type Config struct {
 	CassandraStorageConfig cassandra.Config   `yaml:"cassandra"`
 	BoltDBConfig           local.BoltDBConfig `yaml:"boltdb"`
 	FSConfig               local.FSConfig     `yaml:"filesystem"`
+	ElasticConfig		   elastic.ElasticConfig `yaml:"elastic"`
 
 	IndexCacheValidity time.Duration
 
@@ -54,6 +56,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.CassandraStorageConfig.RegisterFlags(f)
 	cfg.BoltDBConfig.RegisterFlags(f)
 	cfg.FSConfig.RegisterFlags(f)
+	cfg.ElasticConfig.RegisterFlags(f)
 
 	f.StringVar(&cfg.Engine, "store.engine", "chunks", "The storage engine to use: chunks or tsdb. Be aware tsdb is experimental and shouldn't be used in production.")
 	cfg.IndexQueriesCacheConfig.RegisterFlagsWithPrefix("store.index-cache-read.", "Cache config for index entry reading. ", f)
@@ -137,8 +140,10 @@ func NewIndexClient(name string, cfg Config, schemaCfg chunk.SchemaConfig) (chun
 		return cassandra.NewStorageClient(cfg.CassandraStorageConfig, schemaCfg)
 	case "boltdb":
 		return local.NewBoltDBIndexClient(cfg.BoltDBConfig)
+	case "elastic":
+		return elastic.NewESIndexClient(cfg.ElasticConfig)
 	default:
-		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: aws, cassandra, inmemory, gcp, bigtable, bigtable-hashed", name)
+		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: aws, cassandra, inmemory, gcp, bigtable, bigtable-hashed, elastic", name)
 	}
 }
 
