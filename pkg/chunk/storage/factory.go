@@ -34,7 +34,7 @@ type Config struct {
 	CassandraStorageConfig cassandra.Config   `yaml:"cassandra"`
 	BoltDBConfig           local.BoltDBConfig `yaml:"boltdb"`
 	FSConfig               local.FSConfig     `yaml:"filesystem"`
-	ElasticConfig		   elastic.ElasticConfig `yaml:"elastic"`
+	ElasticConfig          elastic.Config     `yaml:"elastic"`
 
 	IndexCacheValidity time.Duration
 
@@ -182,8 +182,10 @@ func NewTableClient(name string, cfg Config) (chunk.TableClient, error) {
 		return cassandra.NewTableClient(context.Background(), cfg.CassandraStorageConfig)
 	case "boltdb":
 		return local.NewTableClient(cfg.BoltDBConfig.Directory)
+	case "elastic":
+		return elastic.NewTableClient(context.Background(), cfg.ElasticConfig)
 	default:
-		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: aws, cassandra, inmemory, gcp, bigtable, bigtable-hashed", name)
+		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: aws, cassandra, inmemory, gcp, bigtable, bigtable-hashed, elastic", name)
 	}
 }
 
