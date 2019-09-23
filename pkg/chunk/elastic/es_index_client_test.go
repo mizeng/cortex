@@ -1,5 +1,11 @@
 package elastic
 
+// There's no good embedded ElasticSearch, so we use a real ElasticSearch instance.
+// To enable below tests:
+// $ docker pull docker.elastic.co/elasticsearch/elasticsearch:6.4.3
+// $ docker run -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.4.3
+
+/*
 import (
 	"context"
 	"fmt"
@@ -9,7 +15,6 @@ import (
 
 var config = ElasticConfig{
 	Address:   "http://127.0.0.1:9200",
-	IndexName: "loki",
 	IndexType: "lokiindex",
 }
 
@@ -19,33 +24,26 @@ func TestNewESIndexClient(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	client, _ := NewESIndexClient(config)
-	client.BatchWrite(nil, nil)
+	ctx = context.Background()
+
+	writeBatch := client.NewWriteBatch()
+	writeBatch.Add("index_2594_test", "fake:d18161:logs:job", nil, nil)
+	client.BatchWrite(ctx, writeBatch)
 }
 
 func TestQuery(t *testing.T) {
 	client, _ := NewESIndexClient(config)
 	ctx = context.Background()
-	queries:= []chunk.IndexQuery {chunk.IndexQuery{
-		TableName: "tableName",
-		HashValue: "olivere",
-		RangeValueStart: []byte("Take Five1"),
-	}}
 
 	var have int
-	client.QueryPages(ctx, queries, func(_ chunk.IndexQuery, read chunk.ReadBatch) bool {
-		iter := read.Iterator()
-		for iter.Next() {
-			have++
-		}
-		return true
-	})
-	fmt.Printf("have %d\n", have)
-
-	have = 0
-	queries= []chunk.IndexQuery {chunk.IndexQuery{
-		TableName: "tableName",
-		HashValue: "olivere",
-		RangeValuePrefix: []byte("Take Five2"),
+	queries := []chunk.IndexQuery {chunk.IndexQuery{
+		TableName: "index_2594",
+		HashValue: "fake:d18162:logs:job",
+		RangeValuePrefix: nil,
+	},chunk.IndexQuery{
+		TableName: "index_2594",
+		HashValue: "fake:d18161:logs:job",
+		RangeValuePrefix: nil,
 	}}
 	client.QueryPages(ctx, queries, func(_ chunk.IndexQuery, read chunk.ReadBatch) bool {
 		iter := read.Iterator()
@@ -56,3 +54,4 @@ func TestQuery(t *testing.T) {
 	})
 	fmt.Printf("have %d\n", have)
 }
+*/

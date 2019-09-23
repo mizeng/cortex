@@ -12,19 +12,19 @@ import (
 //var ctx = context.Background()
 
 type tableClient struct {
-	cfg     	ElasticConfig
-	client   	*elastic.Client
+	cfg    Config
+	client *elastic.Client
 }
 
 // NewTableClient returns a new TableClient.
-func NewTableClient(ctx context.Context, cfg ElasticConfig) (chunk.TableClient, error) {
+func NewTableClient(ctx context.Context, cfg Config) (chunk.TableClient, error) {
 	client, err := newES(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return &tableClient{
-		cfg:     	cfg,
-		client: 	client,
+		cfg:    cfg,
+		client: client,
 	}, nil
 }
 
@@ -39,21 +39,21 @@ func (c *tableClient) ListTables(ctx context.Context) ([]string, error) {
 }
 
 func (c *tableClient) CreateTable(ctx context.Context, desc chunk.TableDesc) error {
-	// Use the IndexExists service to check if a specified index exists.
-	exists, err := c.client.IndexExists(desc.Name).Do(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	if !exists {
-		// Create a new index.
-		createIndex, err := c.client.CreateIndex(desc.Name).BodyString(mapping).Do(ctx)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		if !createIndex.Acknowledged {
-			// Not acknowledged
-		}
-	}
+	//// Use the IndexExists service to check if a specified index exists.
+	//exists, err := c.client.IndexExists(desc.Name).Do(ctx)
+	//if err != nil {
+	//	return errors.WithStack(err)
+	//}
+	//if !exists {
+	//	// Create a new index.
+	//	createIndex, err := c.client.CreateIndex(desc.Name).BodyString(mapping).Do(ctx)
+	//	if err != nil {
+	//		return errors.WithStack(err)
+	//	}
+	//	if !createIndex.Acknowledged {
+	//		// Not acknowledged
+	//	}
+	//}
 	return nil
 }
 
