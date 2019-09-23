@@ -9,36 +9,33 @@ import (
 	"github.com/go-kit/kit/log/level"
 
 	"reflect"
-	"strconv"
 
 	"fmt"
 	"github.com/olivere/elastic"
 )
 
 const (
-	null           = string('\xff')
-	max_fetch_docs = 1000
+	null         = string('\xff')
+	maxFetchDocs = 1000
 )
 
-// BoltDBConfig for a BoltDB index client.
-type ElasticConfig struct {
-	Address 	string 	`yaml:"address"`
-	IndexName 	string 	`yaml:"index_name"`
-	IndexType 	string 	`yaml:"index_type"`
+// Config for a BoltDB index client.
+type Config struct {
+	Address   string `yaml:"address"`
+	IndexType string `yaml:"index_type"`
 }
 
 // RegisterFlags registers flags.
-func (cfg *ElasticConfig) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, "elastic.address", "http://127.0.0.1:9200", "Address of ElasticSearch.")
-	f.StringVar(&cfg.IndexName, "elastic.index_name", "loki", "Index Name used in ElasticSearch.")
 	f.StringVar(&cfg.IndexType, "elastic.index_type", "lokiindex", "Index Type used in ElasticSearch.")
 }
 
-// Tweet is a structure used for serializing/deserializing data in Elasticsearch.
-type LokiIndex struct {
-	Hash    string		`json:"hash"`
-	Range  	string		`json:"range"`
-	Value   string		`json:"value,omitempty"`
+// IndexEntry describes an entry in the chunk index
+type IndexEntry struct {
+	Hash  string `json:"hash"`
+	Range string `json:"range"`
+	Value string `json:"value,omitempty"`
 }
 
 const mapping = `
@@ -65,13 +62,14 @@ const mapping = `
 }`
 
 var client *elastic.Client
+
 // Starting with elastic.v5, you must pass a context to execute each service
 var ctx = context.Background()
 
 // StorageClient implements chunk.IndexClient and chunk.ObjectClient for Cassandra.
 type esClient struct {
-	cfg 		ElasticConfig
-	client   	*elastic.Client
+	cfg    Config
+	client *elastic.Client
 }
 
 func (e *esClient) Stop() {
@@ -100,16 +98,18 @@ func (b *writeBatch) Add(tableName, hashValue string, rangeValue []byte, value [
 func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error {
 	b := batch.(*writeBatch)
 
-	exists, err := e.client.IndexExists(e.cfg.IndexName).Do(ctx)
+	indexName := b.entries[0].TableName
+	exists, err := e.client.IndexExists(indexName).Do(ctx)
 	if err != nil {
 		// Handle error
+		level.Error(util.Logger).Log("msg", fmt.Sprintf("IndexName %s exists check has error!", indexName))
 		panic(err)
 	}
 	if !exists {
 		// Create a new index.
-		createIndex, err := e.client.CreateIndex(e.cfg.IndexName).BodyString(mapping).Do(ctx)
+		createIndex, err := e.client.CreateIndex(indexName).BodyString(mapping).Do(ctx)
 		if err != nil {
-			// Handle error
+			level.Error(util.Logger).Log("msg", fmt.Sprintf("Create IndexName %s failed!", indexName))
 			panic(err)
 		}
 		if !createIndex.Acknowledged {
@@ -119,8 +119,8 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 
 	bulkRequest := e.client.Bulk()
 	for _, entry := range b.entries {
-		loki := LokiIndex{Hash: entry.HashValue, Range: string(entry.RangeValue), Value: string(entry.Value)}
-		req := elastic.NewBulkIndexRequest().Index(e.cfg.IndexName).Type(e.cfg.IndexType).Doc(loki)
+		index := IndexEntry{Hash: entry.HashValue, Range: string(entry.RangeValue), Value: string(entry.Value)}
+		req := elastic.NewBulkIndexRequest().Index(indexName).Type(e.cfg.IndexType).Doc(index)
 		bulkRequest = bulkRequest.Add(req)
 	}
 
@@ -176,6 +176,8 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	var rangeQuery *elastic.RangeQuery
 	var valueTermQuery *elastic.TermQuery
 
+	level.Debug(util.Logger).Log("msg", fmt.Sprintf(
+		"hash [%s], rangeValuePrefix [%s], rangeValueStart [%s]", query.HashValue, query.RangeValuePrefix, query.RangeValueStart))
 	hashTermQuery := elastic.NewTermQuery("hash", query.HashValue)
 	switch {
 	case len(query.RangeValuePrefix) > 0 && query.ValueEqual == nil:
@@ -185,45 +187,65 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	case len(query.RangeValuePrefix) > 0 && query.ValueEqual != nil:
 		rangeQuery = elastic.NewRangeQuery("range").Gte(string(query.RangeValuePrefix)).
 			Lt(string(query.RangeValuePrefix) + null)
-		valueTermQuery= elastic.NewTermQuery("value", query.ValueEqual)
+		valueTermQuery = elastic.NewTermQuery("value", query.ValueEqual)
 
 	case len(query.RangeValueStart) > 0 && query.ValueEqual == nil:
 		rangeQuery = elastic.NewRangeQuery("range").Gte(string(query.RangeValueStart))
 
 	case len(query.RangeValueStart) > 0 && query.ValueEqual != nil:
 		rangeQuery = elastic.NewRangeQuery("range").Gte(string(query.RangeValueStart))
-		valueTermQuery= elastic.NewTermQuery("value", query.ValueEqual)
+		valueTermQuery = elastic.NewTermQuery("value", query.ValueEqual)
 
 	case query.ValueEqual != nil:
-		valueTermQuery= elastic.NewTermQuery("value", query.ValueEqual)
+		valueTermQuery = elastic.NewTermQuery("value", query.ValueEqual)
 
 	case query.ValueEqual == nil:
 		break
 	}
-	// Search with a term query
-	searchResult, err := e.client.Search().
-		Index(e.cfg.IndexName).   // search in index"
-		Query(hashTermQuery). // specify the query
-		Query(valueTermQuery).
-		Query(rangeQuery).
-		Sort("range", true). // sort by "range" field, ascending
-		From(0).Size(max_fetch_docs).   // take documents 0-9
-		Pretty(true).       // pretty print request and response JSON
-		Do(ctx)             // execute
+
+	exists, err := e.client.IndexExists(query.TableName).Do(ctx)
 	if err != nil {
 		// Handle error
+		fmt.Println(exists)
+	}
+
+	// Search with a term query
+	baseQuery := e.client.Search().
+		Index(query.TableName).
+		Query(hashTermQuery)
+	if valueTermQuery != nil {
+		baseQuery = baseQuery.Query(valueTermQuery)
+	}
+	if rangeQuery != nil {
+		baseQuery = baseQuery.Query(rangeQuery)
+	}
+
+	// Search with a term query
+	searchResult, err := baseQuery.
+		Sort("range", true). // sort by "range" field, ascending
+		From(0).Size(maxFetchDocs).
+		Pretty(true). // pretty print request and response JSON
+		Do(ctx)       // execute
+
+	if searchResult == nil || searchResult.Hits == nil {
+		return nil
+	}
+
+	if err != nil {
+		// Handle error
+		level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
 		panic(err)
 	}
 
 	// searchResult is of type SearchResult and returns hits, suggestions,
 	// and all kinds of other information from Elasticsearch.
-	level.Debug(util.Logger).Log("msg", fmt.Sprintf("Query took %d milliseconds\n", searchResult.TookInMillis))
+	level.Debug(util.Logger).Log("msg", fmt.Sprintf("Query took %d milliseconds with result num\n", searchResult.TookInMillis))
 
 	var batch readBatch
-	var ttyp LokiIndex
+	var ttyp IndexEntry
 	for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
-		if t, ok := item.(LokiIndex); ok {
-			level.Debug(util.Logger).Log("msg", fmt.Sprintf("LokiIndex by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
+		if t, ok := item.(IndexEntry); ok {
+			level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
 			batch.rangeValue = []byte(t.Range)
 			batch.value = []byte(t.Value)
 
@@ -232,13 +254,12 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 			}
 		}
 	}
-	// TotalHits is another convenience function that works even when something goes wrong.
-	//fmt.Printf("Found a total of %d tweets\n", searchResult.TotalHits())
 
 	return nil
 }
 
-func NewESIndexClient(cfg ElasticConfig) (chunk.IndexClient, error){
+// NewESIndexClient creates a new IndexClient that used ElasticSearch.
+func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 	client, err := newES(cfg)
 	if err != nil {
 		return nil, err
@@ -250,7 +271,7 @@ func NewESIndexClient(cfg ElasticConfig) (chunk.IndexClient, error){
 	return indexClient, nil
 }
 
-func newES(cfg ElasticConfig) (*elastic.Client, error) {
+func newES(cfg Config) (*elastic.Client, error) {
 	// Obtain a client and connect to the default Elasticsearch installation
 	// on 127.0.0.1:9200. Of course you can configure your client to connect
 	// to other hosts and configure it in various other ways.
@@ -261,73 +282,4 @@ func newES(cfg ElasticConfig) (*elastic.Client, error) {
 	}
 
 	return client, nil
-}
-
-func (e *esClient) CreateIndex() {
-	// Use the IndexExists service to check if a specified index exists.
-	exists, err := e.client.IndexExists(e.cfg.IndexName).Do(ctx)
-	if err != nil {
-		// Handle error
-		panic(err)
-	}
-	if !exists {
-		// Create a new index.
-		createIndex, err := e.client.CreateIndex(e.cfg.IndexName).BodyString(mapping).Do(ctx)
-		if err != nil {
-			// Handle error
-			panic(err)
-		}
-		if !createIndex.Acknowledged {
-			// Not acknowledged
-		}
-	}
-
-	// Index a tweet (using JSON serialization)
-	loki1 := LokiIndex{Hash: "olivere", Range: "Take Five", Value: "0"}
-	put1, err := e.client.Index().
-		Index(e.cfg.IndexName).
-		Type(e.cfg.IndexType).
-		Id("1").
-		BodyJson(loki1).
-		Do(ctx)
-	if err != nil {
-		// Handle error
-		panic(err)
-	}
-	fmt.Printf("Indexed tweet %s to index %s, type %s\n", put1.Id, put1.Index, put1.Type)
-}
-
-func (e *esClient) CreateBatchIndex() {
-	// Use the IndexExists service to check if a specified index exists.
-	exists, err := e.client.IndexExists(e.cfg.IndexName).Do(ctx)
-	if err != nil {
-		// Handle error
-		panic(err)
-	}
-	if !exists {
-		// Create a new index.
-		createIndex, err := e.client.CreateIndex(e.cfg.IndexName).BodyString(mapping).Do(ctx)
-		if err != nil {
-			// Handle error
-			panic(err)
-		}
-		if !createIndex.Acknowledged {
-			// Not acknowledged
-		}
-	}
-
-	bulkRequest := e.client.Bulk()
-	for i := 0; i < 10; i++ {
-		loki := LokiIndex{Hash: "olivere", Range: "Take Five" + strconv.Itoa(i), Value: "0"}
-		req := elastic.NewBulkIndexRequest().Index(e.cfg.IndexName).Type(e.cfg.IndexType).Doc(loki)
-		bulkRequest = bulkRequest.Add(req)
-	}
-
-	bulkResponse, err := bulkRequest.Do(ctx)
-	if err != nil {
-		fmt.Println(err)
-	}
-	if bulkResponse != nil {
-
-	}
 }
