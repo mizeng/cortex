@@ -23,12 +23,16 @@ const (
 type Config struct {
 	Address   string `yaml:"address"`
 	IndexType string `yaml:"index_type"`
+	User      string `yaml:"user"`
+	Password  string `yaml:"password"`
 }
 
 // RegisterFlags registers flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, "elastic.address", "http://127.0.0.1:9200", "Address of ElasticSearch.")
 	f.StringVar(&cfg.IndexType, "elastic.index_type", "lokiindex", "Index Type used in ElasticSearch.")
+	f.StringVar(&cfg.User, "elastic.user", "user", "User used in ElasticSearch Basic Auth.")
+	f.StringVar(&cfg.Password, "elastic.password", "password", "Password used in ElasticSearch Basic Auth.")
 }
 
 // IndexEntry describes an entry in the chunk index
@@ -276,7 +280,10 @@ func newES(cfg Config) (*elastic.Client, error) {
 	// on 127.0.0.1:9200. Of course you can configure your client to connect
 	// to other hosts and configure it in various other ways.
 	var err error
-	client, err = elastic.NewClient(elastic.SetURL(cfg.Address), elastic.SetSniff(false))
+	client, err = elastic.NewClient(
+		// set basic auth for ElasticSearch which requires,
+		// and is back-compatible for the one which does not require auth
+		elastic.SetBasicAuth(cfg.User, cfg.Password), elastic.SetURL(cfg.Address), elastic.SetSniff(false))
 	if err != nil {
 		return nil, err
 	}
