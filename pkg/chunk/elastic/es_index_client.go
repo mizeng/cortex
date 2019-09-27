@@ -2,11 +2,14 @@ package elastic
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
+	"net/http"
+	"time"
 
 	"reflect"
 
@@ -276,14 +279,25 @@ func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 }
 
 func newES(cfg Config) (*elastic.Client, error) {
+	//fix x509: certificate signed by unknown authority
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	httpClient := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: tr,
+	}
+
 	// Obtain a client and connect to the default Elasticsearch installation
 	// on 127.0.0.1:9200. Of course you can configure your client to connect
 	// to other hosts and configure it in various other ways.
 	var err error
 	client, err = elastic.NewClient(
+		elastic.SetHttpClient(httpClient),
 		// set basic auth for ElasticSearch which requires,
 		// and is back-compatible for the one which does not require auth
-		elastic.SetBasicAuth(cfg.User, cfg.Password), elastic.SetURL(cfg.Address), elastic.SetSniff(false))
+		elastic.SetBasicAuth(cfg.User, cfg.Password), elastic.SetURL(cfg.Address),
+		elastic.SetSniff(false))
 	if err != nil {
 		return nil, err
 	}
