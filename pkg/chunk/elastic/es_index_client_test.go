@@ -13,9 +13,11 @@ import (
 	"testing"
 )
 
-var config = ElasticConfig{
+var config = Config{
 	Address:   "http://127.0.0.1:9200",
 	IndexType: "lokiindex",
+	User: 	   "lokiuser",
+	Password:  "lokipwd",
 }
 
 func TestNewESIndexClient(t *testing.T) {
@@ -41,7 +43,7 @@ func TestQuery(t *testing.T) {
 		HashValue: "fake:d18162:logs:job",
 		RangeValuePrefix: nil,
 	},chunk.IndexQuery{
-		TableName: "index_2594",
+		TableName: "index_2594_test",
 		HashValue: "fake:d18161:logs:job",
 		RangeValuePrefix: nil,
 	}}
@@ -54,4 +56,5 @@ func TestQuery(t *testing.T) {
 	})
 	fmt.Printf("have %d\n", have)
 }
+
 */
