@@ -3,11 +3,13 @@ package elastic
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -24,10 +26,14 @@ const (
 
 // Config for a BoltDB index client.
 type Config struct {
-	Address   string `yaml:"address"`
-	IndexType string `yaml:"index_type"`
-	User      string `yaml:"user"`
-	Password  string `yaml:"password"`
+	Address       string `yaml:"address"`
+	IndexType     string `yaml:"index_type"`
+	User          string `yaml:"user"`
+	Password      string `yaml:"password"`
+	TLSSkipVerify bool   `yaml:"tls_skip_verify"`
+	CertFile      string `yaml:"cert_file"`
+	KeyFile       string `yaml:"key_file"`
+	CaFile        string `yaml:"ca_file"`
 }
 
 // RegisterFlags registers flags.
@@ -36,6 +42,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.IndexType, "elastic.index_type", "lokiindex", "Index Type used in ElasticSearch.")
 	f.StringVar(&cfg.User, "elastic.user", "user", "User used in ElasticSearch Basic Auth.")
 	f.StringVar(&cfg.Password, "elastic.password", "password", "Password used in ElasticSearch Basic Auth.")
+	f.BoolVar(&cfg.TLSSkipVerify, "elastic.tls_skip_verify", true, "Skip tls verify or not. Default is skip.")
+	f.StringVar(&cfg.CertFile, "elastic.cert_file", "", "Cert File Location used in TLS Verify.")
+	f.StringVar(&cfg.KeyFile, "elastic.key_file", "", "Key File Location used in TLS Verify.")
+	f.StringVar(&cfg.CaFile, "elastic.ca_file", "", "CA File Location used in TLS Verify.")
+
 }
 
 // IndexEntry describes an entry in the chunk index
@@ -280,9 +291,36 @@ func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 
 func newES(cfg Config) (*elastic.Client, error) {
 	//fix x509: certificate signed by unknown authority
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	var tr *http.Transport
+	if cfg.TLSSkipVerify { // if skip TLS Verify
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	} else { // not skip TLS Verify
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, err
+		}
+		caCert, err := ioutil.ReadFile(cfg.CaFile)
+		if err != nil {
+			return nil, err
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		// Setup HTTPS client
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      caCertPool,
+		}
+		tlsConfig.BuildNameToCertificate()
+
+		tr = &http.Transport{
+			TLSClientConfig:     tlsConfig,
+			TLSHandshakeTimeout: 5 * time.Second,
+		}
 	}
+
 	httpClient := &http.Client{
 		Timeout:   15 * time.Second,
 		Transport: tr,
