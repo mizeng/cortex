@@ -141,7 +141,13 @@ func (c *store) calculateIndexEntries(userID string, from, through model.Time, c
 		return nil, fmt.Errorf("no MetricNameLabel for chunk")
 	}
 
-	entries, err := c.schema.GetWriteEntries(from, through, userID, metricName, chunk.Metric, chunk.ExternalKey())
+	// Fetch namespace if it exists in matchers
+	namespace := "defaultns"
+	if chunk.Metric.Has("_namespace_") {
+		namespace = chunk.Metric.Get("namespace")
+	}
+
+	entries, err := c.schema.GetWriteEntries(from, through, userID, namespace, metricName, chunk.Metric, chunk.ExternalKey())
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +166,7 @@ func (c *store) calculateIndexEntries(userID string, from, through model.Time, c
 }
 
 // Get implements Store
-func (c *store) Get(ctx context.Context, userID string, from, through model.Time, allMatchers ...*labels.Matcher) ([]Chunk, error) {
+func (c *store) Get(ctx context.Context, userID, namespace string, from, through model.Time, allMatchers ...*labels.Matcher) ([]Chunk, error) {
 	log, ctx := spanlogger.New(ctx, "ChunkStore.Get")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "matchers", len(allMatchers))
@@ -174,15 +180,15 @@ func (c *store) Get(ctx context.Context, userID string, from, through model.Time
 	}
 
 	log.Span.SetTag("metric", metricName)
-	return c.getMetricNameChunks(ctx, userID, from, through, matchers, metricName)
+	return c.getMetricNameChunks(ctx, userID, namespace, from, through, matchers, metricName)
 }
 
-func (c *store) GetChunkRefs(ctx context.Context, userID string, from, through model.Time, allMatchers ...*labels.Matcher) ([][]Chunk, []*Fetcher, error) {
+func (c *store) GetChunkRefs(ctx context.Context, userID, namespace string, from, through model.Time, allMatchers ...*labels.Matcher) ([][]Chunk, []*Fetcher, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
 // LabelValuesForMetricName retrieves all label values for a single label name and metric name.
-func (c *store) LabelValuesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName, labelName string) ([]string, error) {
+func (c *store) LabelValuesForMetricName(ctx context.Context, userID, namespace string, from, through model.Time, metricName, labelName string) ([]string, error) {
 	log, ctx := spanlogger.New(ctx, "ChunkStore.LabelValues")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName, "labelName", labelName)
@@ -194,7 +200,7 @@ func (c *store) LabelValuesForMetricName(ctx context.Context, userID string, fro
 		return nil, nil
 	}
 
-	queries, err := c.schema.GetReadQueriesForMetricLabel(from, through, userID, metricName, labelName)
+	queries, err := c.schema.GetReadQueriesForMetricLabel(from, through, userID, namespace, metricName, labelName)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +222,7 @@ func (c *store) LabelValuesForMetricName(ctx context.Context, userID string, fro
 }
 
 // LabelNamesForMetricName retrieves all label names for a metric name.
-func (c *store) LabelNamesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName string) ([]string, error) {
+func (c *store) LabelNamesForMetricName(ctx context.Context, userID, namespace string, from, through model.Time, metricName string) ([]string, error) {
 	log, ctx := spanlogger.New(ctx, "ChunkStore.LabelNamesForMetricName")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName)
@@ -228,7 +234,7 @@ func (c *store) LabelNamesForMetricName(ctx context.Context, userID string, from
 		return nil, nil
 	}
 
-	chunks, err := c.lookupChunksByMetricName(ctx, userID, from, through, nil, metricName)
+	chunks, err := c.lookupChunksByMetricName(ctx, userID, namespace, from, through, nil, metricName)
 	if err != nil {
 		return nil, err
 	}
@@ -311,13 +317,13 @@ func (c *store) validateQuery(ctx context.Context, userID string, from *model.Ti
 	return metricNameMatcher.Value, matchers, false, nil
 }
 
-func (c *store) getMetricNameChunks(ctx context.Context, userID string, from, through model.Time, allMatchers []*labels.Matcher, metricName string) ([]Chunk, error) {
+func (c *store) getMetricNameChunks(ctx context.Context, userID, namespace string, from, through model.Time, allMatchers []*labels.Matcher, metricName string) ([]Chunk, error) {
 	log, ctx := spanlogger.New(ctx, "ChunkStore.getMetricNameChunks")
 	defer log.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName, "matchers", len(allMatchers))
 
 	filters, matchers := util.SplitFiltersAndMatchers(allMatchers)
-	chunks, err := c.lookupChunksByMetricName(ctx, userID, from, through, matchers, metricName)
+	chunks, err := c.lookupChunksByMetricName(ctx, userID, namespace, from, through, matchers, metricName)
 	if err != nil {
 		return nil, err
 	}
@@ -346,13 +352,13 @@ func (c *store) getMetricNameChunks(ctx context.Context, userID string, from, th
 	return filteredChunks, nil
 }
 
-func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, from, through model.Time, matchers []*labels.Matcher, metricName string) ([]Chunk, error) {
+func (c *store) lookupChunksByMetricName(ctx context.Context, userID, namespace string, from, through model.Time, matchers []*labels.Matcher, metricName string) ([]Chunk, error) {
 	log, ctx := spanlogger.New(ctx, "ChunkStore.lookupChunksByMetricName")
 	defer log.Finish()
 
 	// Just get chunks for metric if there are no matchers
 	if len(matchers) == 0 {
-		queries, err := c.schema.GetReadQueriesForMetric(from, through, userID, metricName)
+		queries, err := c.schema.GetReadQueriesForMetric(from, through, userID, namespace, metricName)
 		if err != nil {
 			return nil, err
 		}
@@ -382,9 +388,9 @@ func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, fro
 			var queries []IndexQuery
 			var err error
 			if matcher.Type != labels.MatchEqual {
-				queries, err = c.schema.GetReadQueriesForMetricLabel(from, through, userID, metricName, matcher.Name)
+				queries, err = c.schema.GetReadQueriesForMetricLabel(from, through, userID, namespace, metricName, matcher.Name)
 			} else {
-				queries, err = c.schema.GetReadQueriesForMetricLabelValue(from, through, userID, metricName, matcher.Name, matcher.Value)
+				queries, err = c.schema.GetReadQueriesForMetricLabelValue(from, through, userID, namespace, metricName, matcher.Name, matcher.Value)
 			}
 			if err != nil {
 				incomingErrors <- err

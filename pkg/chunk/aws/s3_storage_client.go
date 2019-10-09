@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/go-kit/kit/log/level"
 	"hash/fnv"
 	"io/ioutil"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/util"
+	logUtil "github.com/cortexproject/cortex/pkg/util"
 	awscommon "github.com/weaveworks/common/aws"
 	"github.com/weaveworks/common/instrument"
 )
@@ -78,8 +80,14 @@ func (a s3ObjectClient) getChunk(ctx context.Context, decodeContext *chunk.Decod
 	var resp *s3.GetObjectOutput
 
 	// Map the key into a bucket
-	key := c.ExternalKey()
+	namespace := c.Metric.Get("_namespace_")
+	if len(namespace) == 0 {
+		namespace = "defaultns"
+	}
+	key := namespace + "/" + c.ExternalKey() // add namespace to key
 	bucket := a.bucketFromKey(key)
+
+	level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("getChunk: key [%s], bucket [%s]\n", key, bucket))
 
 	err := instrument.CollectedRequest(ctx, "S3.GetObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		var err error
@@ -114,7 +122,12 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 		if err != nil {
 			return err
 		}
-		key := chunks[i].ExternalKey()
+
+		namespace := chunks[i].Metric.Get("_namespace_")
+		if len(namespace) == 0 {
+			namespace = "defaultns"
+		}
+		key := namespace + "/" + chunks[i].ExternalKey() // add namespace to key
 
 		s3ChunkKeys = append(s3ChunkKeys, key)
 		s3ChunkBufs = append(s3ChunkBufs, buf)

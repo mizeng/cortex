@@ -54,7 +54,16 @@ func (l lazyQuerier) Get(ctx context.Context, userID string, from, through model
 		return nil, fmt.Errorf("not supported")
 	}
 
-	return store.Get(ctx, userID, from, through, matchers...)
+	// Fetch namespace if it exists in matchers
+	namespace := "defaultns"
+	for _, matcher := range matchers {
+		if matcher.Name == "_namespace_" {
+			namespace = matcher.Value
+			break
+		}
+	}
+
+	return store.Get(ctx, userID, namespace, from, through, matchers...)
 }
 
 // errSeriesSet implements storage.SeriesSet, just returning an error.
