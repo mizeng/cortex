@@ -54,7 +54,15 @@ func ChunksHandler(queryable storage.Queryable) http.Handler {
 			return
 		}
 
-		chunks, err := store.Get(r.Context(), userID, model.Time(mint), model.Time(maxt), matchers...)
+		// Fetch namespace if it exists in matchers
+		namespace := "defaultns"
+		for _, matcher := range matchers {
+			if matcher.Name == "_namespace_" {
+				namespace = matcher.Value
+				break
+			}
+		}
+		chunks, err := store.Get(r.Context(), userID, namespace, model.Time(mint), model.Time(maxt), matchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
