@@ -39,7 +39,17 @@ func (q *chunkStoreQuerier) Select(sp *storage.SelectParams, matchers ...*labels
 	if err != nil {
 		return nil, nil, err
 	}
-	chunks, err := q.store.Get(q.ctx, userID, model.Time(sp.Start), model.Time(sp.End), matchers...)
+
+	// Fetch namespace if it exists in matchers
+	namespace := "defaultns"
+	for _, matcher := range matchers {
+		if matcher.Name == "_namespace_" {
+			namespace = matcher.Value
+			break
+		}
+	}
+
+	chunks, err := q.store.Get(q.ctx, userID, namespace, model.Time(sp.Start), model.Time(sp.End), matchers...)
 	if err != nil {
 		return nil, nil, promql.ErrStorage{Err: err}
 	}

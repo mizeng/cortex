@@ -31,20 +31,20 @@ var (
 // to write or read chunks from the external index.
 type Schema interface {
 	// When doing a write, use this method to return the list of entries you should write to.
-	GetWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error)
+	GetWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error)
 
 	// Should only be used with the seriesStore. TODO: Make seriesStore implement a different interface altogether.
 	// returns cache key string and []IndexEntry per bucket, matched in order
-	GetCacheKeysAndLabelWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]string, [][]IndexEntry, error)
-	GetChunkWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error)
+	GetCacheKeysAndLabelWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]string, [][]IndexEntry, error)
+	GetChunkWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error)
 
 	// When doing a read, use these methods to return the list of entries you should query
-	GetReadQueriesForMetric(from, through model.Time, userID string, metricName string) ([]IndexQuery, error)
-	GetReadQueriesForMetricLabel(from, through model.Time, userID string, metricName string, labelName string) ([]IndexQuery, error)
-	GetReadQueriesForMetricLabelValue(from, through model.Time, userID string, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
+	GetReadQueriesForMetric(from, through model.Time, userID, namespace string, metricName string) ([]IndexQuery, error)
+	GetReadQueriesForMetricLabel(from, through model.Time, userID, namespace string, metricName string, labelName string) ([]IndexQuery, error)
+	GetReadQueriesForMetricLabelValue(from, through model.Time, userID, namespace string, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
 
 	// If the query resulted in series IDs, use this method to find chunks.
-	GetChunksForSeries(from, through model.Time, userID string, seriesID []byte) ([]IndexQuery, error)
+	GetChunksForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error)
 }
 
 // IndexQuery describes a query for entries
@@ -80,14 +80,14 @@ type IndexEntry struct {
 
 // schema implements Schema given a bucketing function and and set of range key callbacks
 type schema struct {
-	buckets func(from, through model.Time, userID string) []Bucket
+	buckets func(from, through model.Time, userID, namespace string) []Bucket
 	entries entries
 }
 
-func (s schema) GetWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error) {
+func (s schema) GetWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error) {
 	var result []IndexEntry
 
-	for _, bucket := range s.buckets(from, through, userID) {
+	for _, bucket := range s.buckets(from, through, userID, namespace) {
 		entries, err := s.entries.GetWriteEntries(bucket, metricName, labels, chunkID)
 		if err != nil {
 			return nil, err
@@ -98,11 +98,11 @@ func (s schema) GetWriteEntries(from, through model.Time, userID string, metricN
 }
 
 // returns cache key string and []IndexEntry per bucket, matched in order
-func (s schema) GetCacheKeysAndLabelWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]string, [][]IndexEntry, error) {
+func (s schema) GetCacheKeysAndLabelWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]string, [][]IndexEntry, error) {
 	var keys []string
 	var indexEntries [][]IndexEntry
 
-	for _, bucket := range s.buckets(from, through, userID) {
+	for _, bucket := range s.buckets(from, through, userID, namespace) {
 		key := strings.Join([]string{
 			bucket.tableName,
 			bucket.hashKey,
@@ -124,10 +124,10 @@ func (s schema) GetCacheKeysAndLabelWriteEntries(from, through model.Time, userI
 	return keys, indexEntries, nil
 }
 
-func (s schema) GetChunkWriteEntries(from, through model.Time, userID string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error) {
+func (s schema) GetChunkWriteEntries(from, through model.Time, userID, namespace string, metricName string, labels labels.Labels, chunkID string) ([]IndexEntry, error) {
 	var result []IndexEntry
 
-	for _, bucket := range s.buckets(from, through, userID) {
+	for _, bucket := range s.buckets(from, through, userID, namespace) {
 		entries, err := s.entries.GetChunkWriteEntries(bucket, metricName, labels, chunkID)
 		if err != nil {
 			return nil, err
@@ -138,10 +138,10 @@ func (s schema) GetChunkWriteEntries(from, through model.Time, userID string, me
 
 }
 
-func (s schema) GetReadQueriesForMetric(from, through model.Time, userID string, metricName string) ([]IndexQuery, error) {
+func (s schema) GetReadQueriesForMetric(from, through model.Time, userID, namespace string, metricName string) ([]IndexQuery, error) {
 	var result []IndexQuery
 
-	buckets := s.buckets(from, through, userID)
+	buckets := s.buckets(from, through, userID, namespace)
 	for _, bucket := range buckets {
 		entries, err := s.entries.GetReadMetricQueries(bucket, metricName)
 		if err != nil {
@@ -152,10 +152,10 @@ func (s schema) GetReadQueriesForMetric(from, through model.Time, userID string,
 	return result, nil
 }
 
-func (s schema) GetReadQueriesForMetricLabel(from, through model.Time, userID string, metricName string, labelName string) ([]IndexQuery, error) {
+func (s schema) GetReadQueriesForMetricLabel(from, through model.Time, userID, namespace string, metricName string, labelName string) ([]IndexQuery, error) {
 	var result []IndexQuery
 
-	buckets := s.buckets(from, through, userID)
+	buckets := s.buckets(from, through, userID, namespace)
 	for _, bucket := range buckets {
 		entries, err := s.entries.GetReadMetricLabelQueries(bucket, metricName, labelName)
 		if err != nil {
@@ -166,10 +166,10 @@ func (s schema) GetReadQueriesForMetricLabel(from, through model.Time, userID st
 	return result, nil
 }
 
-func (s schema) GetReadQueriesForMetricLabelValue(from, through model.Time, userID string, metricName string, labelName string, labelValue string) ([]IndexQuery, error) {
+func (s schema) GetReadQueriesForMetricLabelValue(from, through model.Time, userID, namespace string, metricName string, labelName string, labelValue string) ([]IndexQuery, error) {
 	var result []IndexQuery
 
-	buckets := s.buckets(from, through, userID)
+	buckets := s.buckets(from, through, userID, namespace)
 	for _, bucket := range buckets {
 		entries, err := s.entries.GetReadMetricLabelValueQueries(bucket, metricName, labelName, labelValue)
 		if err != nil {
@@ -180,10 +180,10 @@ func (s schema) GetReadQueriesForMetricLabelValue(from, through model.Time, user
 	return result, nil
 }
 
-func (s schema) GetChunksForSeries(from, through model.Time, userID string, seriesID []byte) ([]IndexQuery, error) {
+func (s schema) GetChunksForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error) {
 	var result []IndexQuery
 
-	buckets := s.buckets(from, through, userID)
+	buckets := s.buckets(from, through, userID, namespace)
 	for _, bucket := range buckets {
 		entries, err := s.entries.GetChunksForSeries(bucket, seriesID)
 		if err != nil {

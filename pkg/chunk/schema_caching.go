@@ -13,28 +13,28 @@ type schemaCaching struct {
 	cacheOlderThan time.Duration
 }
 
-func (s *schemaCaching) GetReadQueriesForMetric(from, through model.Time, userID string, metricName string) ([]IndexQuery, error) {
+func (s *schemaCaching) GetReadQueriesForMetric(from, through model.Time, userID, namespace string, metricName string) ([]IndexQuery, error) {
 	return s.splitTimesByCacheability(from, through, func(from, through model.Time) ([]IndexQuery, error) {
-		return s.Schema.GetReadQueriesForMetric(from, through, userID, metricName)
+		return s.Schema.GetReadQueriesForMetric(from, through, userID, namespace, metricName)
 	})
 }
 
-func (s *schemaCaching) GetReadQueriesForMetricLabel(from, through model.Time, userID string, metricName string, labelName string) ([]IndexQuery, error) {
+func (s *schemaCaching) GetReadQueriesForMetricLabel(from, through model.Time, userID, namespace string, metricName string, labelName string) ([]IndexQuery, error) {
 	return s.splitTimesByCacheability(from, through, func(from, through model.Time) ([]IndexQuery, error) {
-		return s.Schema.GetReadQueriesForMetricLabel(from, through, userID, metricName, labelName)
+		return s.Schema.GetReadQueriesForMetricLabel(from, through, userID, namespace, metricName, labelName)
 	})
 }
 
-func (s *schemaCaching) GetReadQueriesForMetricLabelValue(from, through model.Time, userID string, metricName string, labelName string, labelValue string) ([]IndexQuery, error) {
+func (s *schemaCaching) GetReadQueriesForMetricLabelValue(from, through model.Time, userID, namespace string, metricName string, labelName string, labelValue string) ([]IndexQuery, error) {
 	return s.splitTimesByCacheability(from, through, func(from, through model.Time) ([]IndexQuery, error) {
-		return s.Schema.GetReadQueriesForMetricLabelValue(from, through, userID, metricName, labelName, labelValue)
+		return s.Schema.GetReadQueriesForMetricLabelValue(from, through, userID, namespace, metricName, labelName, labelValue)
 	})
 }
 
 // If the query resulted in series IDs, use this method to find chunks.
-func (s *schemaCaching) GetChunksForSeries(from, through model.Time, userID string, seriesID []byte) ([]IndexQuery, error) {
+func (s *schemaCaching) GetChunksForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error) {
 	return s.splitTimesByCacheability(from, through, func(from, through model.Time) ([]IndexQuery, error) {
-		return s.Schema.GetChunksForSeries(from, through, userID, seriesID)
+		return s.Schema.GetChunksForSeries(from, through, userID, namespace, seriesID)
 	})
 }
 

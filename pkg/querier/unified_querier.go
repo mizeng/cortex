@@ -49,12 +49,13 @@ type unifiedChunkQuerier struct {
 	csq chunkStoreQuerier
 }
 
-func (q *unifiedChunkQuerier) Get(ctx context.Context, userID string, from, through model.Time, matchers ...*labels.Matcher) ([]chunk.Chunk, error) {
+func (q *unifiedChunkQuerier) Get(ctx context.Context, userID, namespace string, from, through model.Time, matchers ...*labels.Matcher) ([]chunk.Chunk, error) {
 	css := make(chan []chunk.Chunk, len(q.stores))
 	errs := make(chan error, len(q.stores))
+
 	for _, store := range q.stores {
 		go func(store ChunkStore) {
-			cs, err := store.Get(ctx, userID, from, through, matchers...)
+			cs, err := store.Get(ctx, userID, namespace, from, through, matchers...)
 			if err != nil {
 				errs <- err
 			} else {
@@ -86,7 +87,16 @@ func (q *unifiedChunkQuerier) Select(sp *storage.SelectParams, matchers ...*labe
 		return q.metadataQuery(matchers...)
 	}
 
-	chunks, err := q.Get(q.ctx, userID, model.Time(sp.Start), model.Time(sp.End), matchers...)
+	// Fetch namespace if it exists in matchers
+	namespace := "defaultns"
+	for _, matcher := range matchers {
+		if matcher.Name == "_namespace_" {
+			namespace = matcher.Value
+			break
+		}
+	}
+
+	chunks, err := q.Get(q.ctx, userID, namespace, model.Time(sp.Start), model.Time(sp.End), matchers...)
 	if err != nil {
 		return nil, nil, err
 	}
