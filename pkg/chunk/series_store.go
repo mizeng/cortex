@@ -248,7 +248,7 @@ func (c *seriesStore) lookupLabelNamesByChunks(ctx context.Context, from, throug
 	chunksPerQuery.Observe(float64(len(filtered)))
 
 	// filtered chunk above does not have Metric, here populate it for future query usage
-	chkMetric := []labels.Label{{Name: "namespace", Value: namespace}}
+	chkMetric := []labels.Label{{Name: "_namespace_", Value: namespace}}
 	for i := range filtered {
 		filtered[i].Metric = chkMetric
 	}
