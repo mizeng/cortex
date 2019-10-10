@@ -336,7 +336,7 @@ func newES(cfg Config) (*elastic.Client, error) {
 		// set basic auth for ElasticSearch which requires,
 		// and is back-compatible for the one which does not require auth
 		elastic.SetBasicAuth(cfg.User, cfg.Password), elastic.SetURL(cfg.Address),
-		elastic.SetSniff(false))
+		elastic.SetSniff(false), elastic.SetHealthcheck(false))
 	if err != nil {
 		return nil, err
 	}
