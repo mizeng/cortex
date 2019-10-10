@@ -9,6 +9,7 @@ import (
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -121,14 +122,14 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 	if err != nil {
 		// Handle error
 		level.Error(util.Logger).Log("msg", fmt.Sprintf("IndexName %s exists check has error!", indexName))
-		panic(err)
+		return errors.WithStack(err)
 	}
 	if !exists {
 		// Create a new index.
 		createIndex, err := e.client.CreateIndex(indexName).BodyString(mapping).Do(ctx)
 		if err != nil {
 			level.Error(util.Logger).Log("msg", fmt.Sprintf("Create IndexName %s failed!", indexName))
-			panic(err)
+			return errors.WithStack(err)
 		}
 		if !createIndex.Acknowledged {
 			// Not acknowledged
@@ -221,10 +222,10 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 		break
 	}
 
-	exists, err := e.client.IndexExists(query.TableName).Do(ctx)
+	_, err := e.client.IndexExists(query.TableName).Do(ctx)
 	if err != nil {
 		// Handle error
-		fmt.Println(exists)
+		return errors.WithStack(err)
 	}
 
 	// Search with a term query
@@ -252,7 +253,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	if err != nil {
 		// Handle error
 		level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
-		panic(err)
+		return errors.WithStack(err)
 	}
 
 	// searchResult is of type SearchResult and returns hits, suggestions,
