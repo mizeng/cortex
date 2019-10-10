@@ -118,23 +118,24 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 	b := batch.(*writeBatch)
 
 	indexName := b.entries[0].TableName
-	exists, err := e.client.IndexExists(indexName).Do(ctx)
-	if err != nil {
-		// Handle error
-		level.Error(util.Logger).Log("msg", fmt.Sprintf("IndexName %s exists check has error!", indexName))
-		return errors.WithStack(err)
-	}
-	if !exists {
-		// Create a new index.
-		createIndex, err := e.client.CreateIndex(indexName).BodyString(mapping).Do(ctx)
-		if err != nil {
-			level.Error(util.Logger).Log("msg", fmt.Sprintf("Create IndexName %s failed!", indexName))
-			return errors.WithStack(err)
-		}
-		if !createIndex.Acknowledged {
-			// Not acknowledged
-		}
-	}
+
+	//exists, err := e.client.IndexExists(indexName).Do(ctx)
+	//if err != nil {
+	//	// Handle error
+	//	level.Error(util.Logger).Log("msg", fmt.Sprintf("IndexName %s exists check has error!", indexName))
+	//	return errors.WithStack(err)
+	//}
+	//if !exists {
+	//	// Create a new index.
+	//	createIndex, err := e.client.CreateIndex(indexName).BodyString(mapping).Do(ctx)
+	//	if err != nil {
+	//		level.Error(util.Logger).Log("msg", fmt.Sprintf("Create IndexName %s failed!", indexName))
+	//		return errors.WithStack(err)
+	//	}
+	//	if !createIndex.Acknowledged {
+	//		// Not acknowledged
+	//	}
+	//}
 
 	bulkRequest := e.client.Bulk()
 	for _, entry := range b.entries {
