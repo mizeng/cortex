@@ -9,6 +9,7 @@ import (
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"strings"
