@@ -22,6 +22,7 @@ const (
 	secondsInDay       = int64(24 * time.Hour / time.Second)
 	millisecondsInHour = int64(time.Hour / time.Millisecond)
 	millisecondsInDay  = int64(24 * time.Hour / time.Millisecond)
+	defaultNameSpace   = "defaultns"
 )
 
 var (
@@ -334,7 +335,7 @@ func (cfg *PeriodConfig) hourlyBuckets(from, through model.Time, userID, namespa
 	)
 
 	if len(namespace) == 0 {
-		namespace = "defaultns"
+		namespace = defaultNameSpace
 	}
 
 	for i := fromHour; i <= throughHour; i++ {
@@ -343,7 +344,7 @@ func (cfg *PeriodConfig) hourlyBuckets(from, through model.Time, userID, namespa
 		result = append(result, Bucket{
 			from:      uint32(relativeFrom),
 			through:   uint32(relativeThrough),
-			tableName: namespace + "_" + cfg.IndexTables.TableFor(model.TimeFromUnix(i * secondsInHour)),
+			tableName: cfg.IndexTables.TableForWithNamespace(model.TimeFromUnix(i * secondsInHour), namespace),
 			hashKey:   fmt.Sprintf("%s:%d", userID, i),
 		})
 	}
@@ -358,7 +359,7 @@ func (cfg *PeriodConfig) dailyBuckets(from, through model.Time, userID, namespac
 	)
 
 	if len(namespace) == 0 {
-		namespace = "defaultns"
+		namespace = defaultNameSpace
 	}
 
 	for i := fromDay; i <= throughDay; i++ {
@@ -377,7 +378,7 @@ func (cfg *PeriodConfig) dailyBuckets(from, through model.Time, userID, namespac
 		result = append(result, Bucket{
 			from:      uint32(relativeFrom),
 			through:   uint32(relativeThrough),
-			tableName: namespace + "_" + cfg.IndexTables.TableFor(model.TimeFromUnix(i * secondsInDay)),
+			tableName: cfg.IndexTables.TableForWithNamespace(model.TimeFromUnix(i * secondsInDay), namespace),
 			hashKey:   fmt.Sprintf("%s:d%d", userID, i),
 		})
 	}
@@ -525,4 +526,17 @@ func (cfg *PeriodicTableConfig) TableFor(t model.Time) string {
 
 func (cfg *PeriodicTableConfig) tableForPeriod(i int64) string {
 	return cfg.Prefix + strconv.Itoa(int(i))
+}
+
+// TableFor calculates the table shard for a given point in time with namespace.
+func (cfg *PeriodicTableConfig) TableForWithNamespace(t model.Time, namespace string) string {
+	if cfg.Period == 0 { // non-periodic
+		return cfg.Prefix
+	}
+	periodSecs := int64(cfg.Period / time.Second)
+	return cfg.tableForPeriodWithNamespace(t.Unix() / periodSecs, namespace)
+}
+
+func (cfg *PeriodicTableConfig) tableForPeriodWithNamespace(i int64, namespace string) string {
+	return cfg.Prefix + namespace + "_" + strconv.Itoa(int(i))
 }
