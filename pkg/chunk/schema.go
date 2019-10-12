@@ -49,7 +49,7 @@ type Schema interface {
 	// If the query resulted in series IDs, use this method to find chunks.
 	GetChunksForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error)
 	// Returns queries to retrieve all label names of multiple series by id.
-	GetLabelNamesForSeries(from, through model.Time, userID string, seriesID []byte) ([]IndexQuery, error)
+	GetLabelNamesForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error)
 }
 
 // IndexQuery describes a query for entries
@@ -83,7 +83,7 @@ type IndexEntry struct {
 	Value []byte
 }
 
-type schemaBucketsFunc func(from, through model.Time, userID string) []Bucket
+type schemaBucketsFunc func(from, through model.Time, userID, namespace string) []Bucket
 
 // schema implements Schema given a bucketing function and and set of range key callbacks
 type schema struct {
@@ -201,10 +201,10 @@ func (s schema) GetChunksForSeries(from, through model.Time, userID, namespace s
 	return result, nil
 }
 
-func (s schema) GetLabelNamesForSeries(from, through model.Time, userID string, seriesID []byte) ([]IndexQuery, error) {
+func (s schema) GetLabelNamesForSeries(from, through model.Time, userID, namespace string, seriesID []byte) ([]IndexQuery, error) {
 	var result []IndexQuery
 
-	buckets := s.buckets(from, through, userID)
+	buckets := s.buckets(from, through, userID, namespace)
 	for _, bucket := range buckets {
 		entries, err := s.entries.GetLabelNamesForSeries(bucket, seriesID)
 		if err != nil {

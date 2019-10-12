@@ -208,11 +208,11 @@ func (c *seriesStore) LabelNamesForMetricName(ctx context.Context, userID, names
 	level.Debug(log).Log("series-ids", len(seriesIDs))
 
 	// Lookup the series in the index to get label names.
-	labelNames, err := c.lookupLabelNamesBySeries(ctx, from, through, userID, seriesIDs)
+	labelNames, err := c.lookupLabelNamesBySeries(ctx, from, through, userID, namespace, seriesIDs)
 	if err != nil {
 		// looking up metrics by series is not supported falling back on chunks
 		if err == ErrNotSupported {
-			return c.lookupLabelNamesByChunks(ctx, from, through, userID, seriesIDs)
+			return c.lookupLabelNamesByChunks(ctx, from, through, userID, namespace, seriesIDs)
 		}
 		level.Error(log).Log("msg", "lookupLabelNamesBySeries", "err", err)
 		return nil, err
@@ -222,7 +222,7 @@ func (c *seriesStore) LabelNamesForMetricName(ctx context.Context, userID, names
 	return labelNames, nil
 }
 
-func (c *seriesStore) lookupLabelNamesByChunks(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {
+func (c *seriesStore) lookupLabelNamesByChunks(ctx context.Context, from, through model.Time, userID, namespace string, seriesIDs []string) ([]string, error) {
 	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupLabelNamesByChunks")
 	defer log.Span.Finish()
 
@@ -399,14 +399,14 @@ func (c *seriesStore) lookupChunksBySeries(ctx context.Context, from, through mo
 	return result, err
 }
 
-func (c *seriesStore) lookupLabelNamesBySeries(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {
+func (c *seriesStore) lookupLabelNamesBySeries(ctx context.Context, from, through model.Time, userID, namespace string, seriesIDs []string) ([]string, error) {
 	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupLabelNamesBySeries")
 	defer log.Span.Finish()
 
 	level.Debug(log).Log("seriesIDs", len(seriesIDs))
 	queries := make([]IndexQuery, 0, len(seriesIDs))
 	for _, seriesID := range seriesIDs {
-		qs, err := c.schema.GetLabelNamesForSeries(from, through, userID, []byte(seriesID))
+		qs, err := c.schema.GetLabelNamesForSeries(from, through, userID, namespace, []byte(seriesID))
 		if err != nil {
 			return nil, err
 		}
