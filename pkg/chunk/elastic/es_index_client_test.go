@@ -16,6 +16,7 @@ import (
 var config = Config{
 	Address:   "http://127.0.0.1:9200",
 	IndexType: "lokiindex",
+	TLSSkipVerify: true,
 	User: 	   "lokiuser",
 	Password:  "lokipwd",
 }
@@ -30,6 +31,7 @@ func TestCreate(t *testing.T) {
 
 	writeBatch := client.NewWriteBatch()
 	writeBatch.Add("index_2594_test", "fake:d18161:logs:job", nil, nil)
+	writeBatch.Add("index_2594_test", "fake:d18161:logs:job1", nil, nil)
 	client.BatchWrite(ctx, writeBatch)
 }
 
@@ -38,13 +40,13 @@ func TestQuery(t *testing.T) {
 	ctx = context.Background()
 
 	var have int
-	queries := []chunk.IndexQuery {chunk.IndexQuery{
-		TableName: "index_2594",
-		HashValue: "fake:d18162:logs:job",
+	queries := []chunk.IndexQuery {{
+		TableName:        "index_2594",
+		HashValue:        "fake:d18162:logs:job",
 		RangeValuePrefix: nil,
-	},chunk.IndexQuery{
-		TableName: "index_2594_test",
-		HashValue: "fake:d18161:logs:job",
+	}, {
+		TableName:        "index_2594_test",
+		HashValue:        "fake:d18161:logs:job",
 		RangeValuePrefix: nil,
 	}}
 	client.QueryPages(ctx, queries, func(_ chunk.IndexQuery, read chunk.ReadBatch) bool {
@@ -56,5 +58,4 @@ func TestQuery(t *testing.T) {
 	})
 	fmt.Printf("have %d\n", have)
 }
-
 */

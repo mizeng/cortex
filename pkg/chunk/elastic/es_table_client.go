@@ -39,21 +39,43 @@ func (c *tableClient) ListTables(ctx context.Context) ([]string, error) {
 }
 
 func (c *tableClient) CreateTable(ctx context.Context, desc chunk.TableDesc) error {
-	//// Use the IndexExists service to check if a specified index exists.
-	//exists, err := c.client.IndexExists(desc.Name).Do(ctx)
-	//if err != nil {
-	//	return errors.WithStack(err)
-	//}
-	//if !exists {
-	//	// Create a new index.
-	//	createIndex, err := c.client.CreateIndex(desc.Name).BodyString(mapping).Do(ctx)
-	//	if err != nil {
-	//		return errors.WithStack(err)
-	//	}
-	//	if !createIndex.Acknowledged {
-	//		// Not acknowledged
-	//	}
-	//}
+	// Here we use ElasticSearch auto index management with templates, no need to create table manually.
+	// Instead, we create Template.
+	templateName := "loki-index"
+	// check if template exists, and create one if not exist
+	exists, err := c.client.IndexTemplateExists(templateName).Do(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if !exists {
+		tmpl := `{
+		"index_patterns":["lokiindex_*"],
+		"settings":{
+			"number_of_shards":3,
+			"number_of_replicas":1
+		},
+		"mappings":{
+			"lokiindex": {
+				"properties": {
+					"hash": {
+						"type": "keyword"
+					},
+					"range": {
+						"type": "keyword"
+					},
+					"value": {
+						"type": "keyword"
+					}
+				}
+			}
+		}
+	}`
+		_, err := c.client.IndexPutTemplate(templateName).BodyString(tmpl).Do(ctx)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
 	return nil
 }
 
