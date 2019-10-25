@@ -28,6 +28,7 @@ const (
 type Config struct {
 	Address       string `yaml:"address"`
 	IndexType     string `yaml:"index_type"`
+	MaxFetchDocs  int    `yaml:"max_fetch_docs"`
 	User          string `yaml:"user"`
 	Password      string `yaml:"password"`
 	TLSSkipVerify bool   `yaml:"tls_skip_verify"`
@@ -40,8 +41,9 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, "elastic.address", "http://127.0.0.1:9200", "Address of ElasticSearch.")
 	f.StringVar(&cfg.IndexType, "elastic.index_type", "lokiindex", "Index Type used in ElasticSearch.")
-	f.StringVar(&cfg.User, "elastic.user", "user", "User used in ElasticSearch Basic Auth.")
-	f.StringVar(&cfg.Password, "elastic.password", "password", "Password used in ElasticSearch Basic Auth.")
+	f.IntVar(&cfg.MaxFetchDocs, "elastic.max_fetch_docs", 1000, "Max Fetch Docs during a single Query.")
+	f.StringVar(&cfg.User, "elastic.user", "", "User used in ElasticSearch Basic Auth.")
+	f.StringVar(&cfg.Password, "elastic.password", "", "Password used in ElasticSearch Basic Auth.")
 	f.BoolVar(&cfg.TLSSkipVerify, "elastic.tls_skip_verify", true, "Skip tls verify or not. Default is skip.")
 	f.StringVar(&cfg.CertFile, "elastic.cert_file", "", "Cert File Location used in TLS Verify.")
 	f.StringVar(&cfg.KeyFile, "elastic.key_file", "", "Key File Location used in TLS Verify.")
@@ -55,29 +57,6 @@ type IndexEntry struct {
 	Range string `json:"range"`
 	Value string `json:"value,omitempty"`
 }
-
-const mapping = `
-{
-	"settings":{
-		"number_of_shards": 1,
-		"number_of_replicas": 0
-	},
-	"mappings":{
-		"lokiindex":{
-			"properties":{
-				"hash":{
-					"type":"keyword"
-				},
-				"range":{
-					"type":"keyword"
-				},
-				"value":{
-					"type":"keyword"
-				}
-			}
-		}
-	}
-}`
 
 var client *elastic.Client
 
@@ -94,8 +73,7 @@ func (e *esClient) Stop() {
 	e.client.Stop()
 }
 
-// ES batching isn't really useful in this case, its more to do multiple
-// atomic writes.  Therefore we just do a bunch of writes in parallel.
+// WriteBatch will be transferred into a bulk request to fulfill batch write rather than parallel write
 type writeBatch struct {
 	entries []chunk.IndexEntry
 }
@@ -117,23 +95,6 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 	b := batch.(*writeBatch)
 
 	indexName := b.entries[0].TableName
-	exists, err := e.client.IndexExists(indexName).Do(ctx)
-	if err != nil {
-		// Handle error
-		level.Error(util.Logger).Log("msg", fmt.Sprintf("IndexName %s exists check has error!", indexName))
-		panic(err)
-	}
-	if !exists {
-		// Create a new index.
-		createIndex, err := e.client.CreateIndex(indexName).BodyString(mapping).Do(ctx)
-		if err != nil {
-			level.Error(util.Logger).Log("msg", fmt.Sprintf("Create IndexName %s failed!", indexName))
-			panic(err)
-		}
-		if !createIndex.Acknowledged {
-			// Not acknowledged
-		}
-	}
 
 	bulkRequest := e.client.Bulk()
 	for _, entry := range b.entries {
@@ -221,13 +182,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 		break
 	}
 
-	exists, err := e.client.IndexExists(query.TableName).Do(ctx)
-	if err != nil {
-		// Handle error
-		fmt.Println(exists)
-	}
-
-	// Search with a term query
+	// Build the query
 	baseQuery := e.client.Search().
 		Index(query.TableName).
 		Query(hashTermQuery)
@@ -238,21 +193,19 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 		baseQuery = baseQuery.Query(rangeQuery)
 	}
 
-	// Search with a term query
+	// Search
 	searchResult, err := baseQuery.
 		Sort("range", true). // sort by "range" field, ascending
 		From(0).Size(maxFetchDocs).
-		Pretty(true). // pretty print request and response JSON
-		Do(ctx)       // execute
+		Do(ctx) // execute
 
 	if searchResult == nil || searchResult.Hits == nil {
 		return nil
 	}
 
 	if err != nil {
-		// Handle error
 		level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
-		panic(err)
+		return nil
 	}
 
 	// searchResult is of type SearchResult and returns hits, suggestions,
