@@ -6,19 +6,13 @@ package elastic
 // $ docker run -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.4.3
 
 /*
-import (
-	"context"
-	"fmt"
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"testing"
-)
-
 var config = Config{
 	Address:   "http://127.0.0.1:9200",
 	IndexType: "lokiindex",
 	TLSSkipVerify: true,
 	User: 	   "lokiuser",
 	Password:  "lokipwd",
+	MaxFetchDocs: 1000,
 }
 
 func TestNewESIndexClient(t *testing.T) {
@@ -32,6 +26,7 @@ func TestCreate(t *testing.T) {
 	writeBatch := client.NewWriteBatch()
 	writeBatch.Add("index_2594_test", "fake:d18161:logs:job", nil, nil)
 	writeBatch.Add("index_2594_test", "fake:d18161:logs:job1", nil, nil)
+
 	client.BatchWrite(ctx, writeBatch)
 }
 
