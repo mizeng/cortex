@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"reflect"
@@ -20,8 +21,7 @@ import (
 )
 
 const (
-	null         = string('\xff')
-	maxFetchDocs = 1000
+	null = string('\xff')
 )
 
 // Config for a BoltDB index client.
@@ -41,10 +41,10 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, "elastic.address", "http://127.0.0.1:9200", "Address of ElasticSearch.")
 	f.StringVar(&cfg.IndexType, "elastic.index_type", "lokiindex", "Index Type used in ElasticSearch.")
-	f.IntVar(&cfg.MaxFetchDocs, "elastic.max_fetch_docs", 1000, "Max Fetch Docs during a single Query.")
+	f.IntVar(&cfg.MaxFetchDocs, "elastic.max_fetch_docs", 1000, "Max Fetch Docs for one page.")
 	f.StringVar(&cfg.User, "elastic.user", "", "User used in ElasticSearch Basic Auth.")
 	f.StringVar(&cfg.Password, "elastic.password", "", "Password used in ElasticSearch Basic Auth.")
-	f.BoolVar(&cfg.TLSSkipVerify, "elastic.tls_skip_verify", true, "Skip tls verify or not. Default is skip.")
+	f.BoolVar(&cfg.TLSSkipVerify, "elastic.tls_skip_verify", false, "Skip tls verify or not. Default is not to skip.")
 	f.StringVar(&cfg.CertFile, "elastic.cert_file", "", "Cert File Location used in TLS Verify.")
 	f.StringVar(&cfg.KeyFile, "elastic.key_file", "", "Key File Location used in TLS Verify.")
 	f.StringVar(&cfg.CaFile, "elastic.ca_file", "", "CA File Location used in TLS Verify.")
@@ -195,33 +195,41 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 
 	// Search
 	searchResult, err := baseQuery.
-		Sort("range", true). // sort by "range" field, ascending
-		From(0).Size(maxFetchDocs).
 		Do(ctx) // execute
-
-	if searchResult == nil || searchResult.Hits == nil {
-		return nil
-	}
 
 	if err != nil {
 		level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
 		return nil
 	}
+	if searchResult == nil || searchResult.Hits == nil {
+		return nil
+	}
 
-	// searchResult is of type SearchResult and returns hits, suggestions,
-	// and all kinds of other information from Elasticsearch.
-	level.Debug(util.Logger).Log("msg", fmt.Sprintf("Query took %d milliseconds with result num\n", searchResult.TookInMillis))
+	totalResultNum := searchResult.Hits.TotalHits
+	processedResultNum := int64(0)
+	searchResult = nil
+	for {
+		if processedResultNum > totalResultNum {
+			break
+		}
+		searchResult, _ := baseQuery.
+			Sort("range", true). // sort by "range" field, ascending
+			From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
+			Do(ctx) // execute
 
-	var batch readBatch
-	var ttyp IndexEntry
-	for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
-		if t, ok := item.(IndexEntry); ok {
-			level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
-			batch.rangeValue = []byte(t.Range)
-			batch.value = []byte(t.Value)
+		processedResultNum += int64(e.cfg.MaxFetchDocs)
 
-			if !callback(&batch) {
-				return nil
+		var batch readBatch
+		var ttyp IndexEntry
+		for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
+			if t, ok := item.(IndexEntry); ok {
+				level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
+				batch.rangeValue = []byte(t.Range)
+				batch.value = []byte(t.Value)
+
+				if !callback(&batch) {
+					return nil
+				}
 			}
 		}
 	}
@@ -245,7 +253,7 @@ func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 func newES(cfg Config) (*elastic.Client, error) {
 	//fix x509: certificate signed by unknown authority
 	var tr *http.Transport
-	if cfg.TLSSkipVerify { // if skip TLS Verify
+	if !strings.Contains(cfg.Address, "https") || cfg.TLSSkipVerify {
 		tr = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -288,7 +296,7 @@ func newES(cfg Config) (*elastic.Client, error) {
 		// set basic auth for ElasticSearch which requires,
 		// and is back-compatible for the one which does not require auth
 		elastic.SetBasicAuth(cfg.User, cfg.Password), elastic.SetURL(cfg.Address),
-		elastic.SetSniff(false))
+		elastic.SetSniff(false), elastic.SetHealthcheck(false))
 	if err != nil {
 		return nil, err
 	}
