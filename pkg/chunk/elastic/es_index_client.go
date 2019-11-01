@@ -31,7 +31,7 @@ var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogram
 	Help:      "Time spent doing ApplicationAutoScaling requests.",
 
 	// from 0us to 10s. TODO: Confirm that this is the case for ApplicationAutoScaling.
-	Buckets: []float64{.1, .25, .5, 1, 2, 4, 8, 16, 32},
+	Buckets: []float64{.025, .05, .1, .25, .5, 1, 2, 4, 8, 16, 32},
 }, []string{"operation", "status_code"}))
 
 func init() {
