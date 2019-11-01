@@ -31,7 +31,7 @@ var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogram
 	Help:      "Time spent doing ApplicationAutoScaling requests.",
 
 	// from 0us to 10s. TODO: Confirm that this is the case for ApplicationAutoScaling.
-	Buckets: []float64{.025, .05, .1, .25, .5, 1, 2},
+	Buckets: []float64{.1, .25, .5, 1, 2, 4, 8, 16, 32},
 }, []string{"operation", "status_code"}))
 
 func init() {
@@ -117,9 +117,6 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 		bulkRequest = bulkRequest.Add(req)
 	}
 
-	start := time.Now()
-	esRequestDuration.Before("write", start)
-
 	err := instrument.CollectedRequest(ctx, "ES.BatchWrite", esRequestDuration,
 		instrument.ErrorCode, func(ctx context.Context) error {
 			var err error
@@ -130,6 +127,7 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -227,34 +225,44 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	totalResultNum := searchResult.Hits.TotalHits
 	processedResultNum := int64(0)
 	searchResult = nil
-	start := time.Now()
-	esRequestDuration.Before("query", start)
-	for {
-		if processedResultNum > totalResultNum {
-			break
-		}
-		searchResult, _ := baseQuery.
-			Sort("range", true). // sort by "range" field, ascending
-			From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
-			Do(ctx) // execute
 
-		processedResultNum += int64(e.cfg.MaxFetchDocs)
+	err = instrument.CollectedRequest(ctx, "ES.Query", esRequestDuration,
+		instrument.ErrorCode, func(ctx context.Context) error {
+			var finalErr error
+			for {
+				if processedResultNum > totalResultNum {
+					break
+				}
+				searchResult, err := baseQuery.
+					Sort("range", true). // sort by "range" field, ascending
+					From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
+					Do(ctx) // execute
+				if err != nil {
+					finalErr = err
+				}
+				processedResultNum += int64(e.cfg.MaxFetchDocs)
 
-		var batch readBatch
-		var ttyp IndexEntry
-		for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
-			if t, ok := item.(IndexEntry); ok {
-				level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
-				batch.rangeValue = []byte(t.Range)
-				batch.value = []byte(t.Value)
+				var batch readBatch
+				var ttyp IndexEntry
+				for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
+					if t, ok := item.(IndexEntry); ok {
+						level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
+						batch.rangeValue = []byte(t.Range)
+						batch.value = []byte(t.Value)
 
-				if !callback(&batch) {
-					return nil
+						if !callback(&batch) {
+							return nil
+						}
+					}
 				}
 			}
-		}
+			return finalErr
+		})
+
+	if err != nil {
+		return err
 	}
-	esRequestDuration.After("query", string(searchResult.TookInMillis), start)
+
 	return nil
 }
 
