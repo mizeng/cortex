@@ -27,12 +27,16 @@ const (
 )
 
 var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogramVec(prometheus.HistogramOpts{
-	Name:      "loki_es_request_duration_seconds",
-	Help:      "Time spent doing ApplicationAutoScaling requests.",
+	Name:      "es_request_duration_seconds",
+	Help:      "Time spent doing ElasticSearch requests.",
 
 	// from 0us to 10s. TODO: Confirm that this is the case for ApplicationAutoScaling.
-	Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
+	Buckets: []float64{.025, .05, .1, .25, .5, 1, 2, 4, 8, 16, 32},
 }, []string{"operation", "status_code"}))
+
+func init() {
+	esRequestDuration.Register()
+}
 
 // Config for a BoltDB index client.
 type Config struct {
@@ -113,16 +117,17 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 		bulkRequest = bulkRequest.Add(req)
 	}
 
-	start := time.Now()
-	esRequestDuration.Before("write", start)
-	bulkResponse, err := bulkRequest.Do(ctx)
+	err := instrument.CollectedRequest(ctx, "ES.BatchWrite", esRequestDuration,
+		instrument.ErrorCode, func(ctx context.Context) error {
+			var err error
+			_, err = bulkRequest.Do(ctx)
+			return err
+		})
+
 	if err != nil {
 		return err
 	}
-	esRequestDuration.After("write", string(bulkResponse.Took), start)
-	if bulkResponse != nil {
 
-	}
 	return nil
 }
 
@@ -220,41 +225,46 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	totalResultNum := searchResult.Hits.TotalHits
 	processedResultNum := int64(0)
 	searchResult = nil
-	start := time.Now()
-	esRequestDuration.Before("query", start)
-	for {
-		if processedResultNum > totalResultNum {
-			break
-		}
-		searchResult, _ := baseQuery.
-			Sort("range", true). // sort by "range" field, ascending
-			From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
-			Do(ctx) // execute
 
-		processedResultNum += int64(e.cfg.MaxFetchDocs)
+	err = instrument.CollectedRequest(ctx, "ES.Query", esRequestDuration,
+		instrument.ErrorCode, func(ctx context.Context) error {
+			var finalErr error
+			for {
+				if processedResultNum > totalResultNum {
+					break
+				}
+				searchResult, err := baseQuery.
+					Sort("range", true). // sort by "range" field, ascending
+					From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
+					Do(ctx) // execute
+				if err != nil {
+					finalErr = err
+				}
+				processedResultNum += int64(e.cfg.MaxFetchDocs)
 
-		var batch readBatch
-		var ttyp IndexEntry
-		for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
-			if t, ok := item.(IndexEntry); ok {
-				level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
-				batch.rangeValue = []byte(t.Range)
-				batch.value = []byte(t.Value)
+				var batch readBatch
+				var ttyp IndexEntry
+				for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
+					if t, ok := item.(IndexEntry); ok {
+						level.Debug(util.Logger).Log("msg", fmt.Sprintf("Index by hash %s: range %s, value %s\n", t.Hash, t.Range, t.Value))
+						batch.rangeValue = []byte(t.Range)
+						batch.value = []byte(t.Value)
 
-				if !callback(&batch) {
-					return nil
+						if !callback(&batch) {
+							return nil
+						}
+					}
 				}
 			}
-		}
+			return finalErr
+		})
+
+	if err != nil {
+		return err
 	}
-	esRequestDuration.After("query", string(searchResult.TookInMillis), start)
+
 	return nil
 }
-
-func registerMetrics() {
-	esRequestDuration.Register()
-}
-
 
 // NewESIndexClient creates a new IndexClient that used ElasticSearch.
 func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
@@ -319,6 +329,5 @@ func newES(cfg Config) (*elastic.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	registerMetrics()
 	return client, nil
 }
