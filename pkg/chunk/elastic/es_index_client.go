@@ -31,7 +31,7 @@ var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogram
 	Help:      "Time spent doing ApplicationAutoScaling requests.",
 
 	// from 0us to 10s. TODO: Confirm that this is the case for ApplicationAutoScaling.
-	Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
+	Buckets: []float64{.025, .05, .1, .25, .5, 1, 2},
 }, []string{"operation", "status_code"}))
 
 func init() {
@@ -119,13 +119,16 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 
 	start := time.Now()
 	esRequestDuration.Before("write", start)
-	bulkResponse, err := bulkRequest.Do(ctx)
+
+	err := instrument.CollectedRequest(ctx, "ES.BatchWrite", esRequestDuration,
+		instrument.ErrorCode, func(ctx context.Context) error {
+			var err error
+			_, err = bulkRequest.Do(ctx)
+			return err
+		})
+
 	if err != nil {
 		return err
-	}
-	esRequestDuration.After("write", string(bulkResponse.Took), start)
-	if bulkResponse != nil {
-
 	}
 	return nil
 }
