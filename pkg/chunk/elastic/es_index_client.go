@@ -266,7 +266,6 @@ func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 		cfg,
 		client,
 	}
-	registerMetrics()
 	return indexClient, nil
 }
 

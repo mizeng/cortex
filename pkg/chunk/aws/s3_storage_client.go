@@ -80,8 +80,8 @@ func (a s3ObjectClient) getChunk(ctx context.Context, decodeContext *chunk.Decod
 	if len(namespace) == 0 {
 		namespace = "defaultns"
 	}
-	key := namespace + "/" + c.ExternalKey() // add namespace to key
-	bucket := a.bucketFromKey(key)
+	key := c.ExternalKey()
+	bucket := a.bucketFromKey(key) + "/" + namespace // add namespace to bucket name
 
 	level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("getChunk: key [%s], bucket [%s]\n", key, bucket))
 
@@ -109,6 +109,7 @@ func (a s3ObjectClient) getChunk(ctx context.Context, decodeContext *chunk.Decod
 
 func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) error {
 	var (
+		namespaces 	[]string
 		s3ChunkKeys []string
 		s3ChunkBufs [][]byte
 	)
@@ -123,7 +124,8 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 		if len(namespace) == 0 {
 			namespace = "defaultns"
 		}
-		key := namespace + "/" + chunks[i].ExternalKey() // add namespace to key
+		namespaces = append(namespaces, namespace)
+		key := chunks[i].ExternalKey() // add namespace to key
 
 		s3ChunkKeys = append(s3ChunkKeys, key)
 		s3ChunkBufs = append(s3ChunkBufs, buf)
@@ -132,7 +134,7 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 	incomingErrors := make(chan error)
 	for i := range s3ChunkBufs {
 		go func(i int) {
-			incomingErrors <- a.putS3Chunk(ctx, s3ChunkKeys[i], s3ChunkBufs[i])
+			incomingErrors <- a.putS3Chunk(ctx, namespaces[i], s3ChunkKeys[i], s3ChunkBufs[i])
 		}(i)
 	}
 
@@ -146,11 +148,11 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 	return lastErr
 }
 
-func (a s3ObjectClient) putS3Chunk(ctx context.Context, key string, buf []byte) error {
+func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, buf []byte) error {
 	return instrument.CollectedRequest(ctx, "S3.PutObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		_, err := a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
 			Body:   bytes.NewReader(buf),
-			Bucket: aws.String(a.bucketFromKey(key)),
+			Bucket: aws.String(a.bucketFromKey(key) + "/" + namespace),
 			Key:    aws.String(key),
 		})
 		return err
