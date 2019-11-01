@@ -9,6 +9,8 @@ import (
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/util"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/weaveworks/common/instrument"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -23,6 +25,14 @@ import (
 const (
 	null = string('\xff')
 )
+
+var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	Name:      "loki_es_request_duration_seconds",
+	Help:      "Time spent doing ApplicationAutoScaling requests.",
+
+	// from 0us to 10s. TODO: Confirm that this is the case for ApplicationAutoScaling.
+	Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
+}, []string{"operation", "status_code"}))
 
 // Config for a BoltDB index client.
 type Config struct {
@@ -103,11 +113,13 @@ func (e *esClient) BatchWrite(ctx context.Context, batch chunk.WriteBatch) error
 		bulkRequest = bulkRequest.Add(req)
 	}
 
+	start := time.Now()
+	esRequestDuration.Before("write", start)
 	bulkResponse, err := bulkRequest.Do(ctx)
 	if err != nil {
 		return err
 	}
-
+	esRequestDuration.After("write", string(bulkResponse.Took), start)
 	if bulkResponse != nil {
 
 	}
@@ -208,6 +220,8 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	totalResultNum := searchResult.Hits.TotalHits
 	processedResultNum := int64(0)
 	searchResult = nil
+	start := time.Now()
+	esRequestDuration.Before("query", start)
 	for {
 		if processedResultNum > totalResultNum {
 			break
@@ -233,9 +247,14 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 			}
 		}
 	}
-
+	esRequestDuration.After("query", string(searchResult.TookInMillis), start)
 	return nil
 }
+
+func registerMetrics() {
+	esRequestDuration.Register()
+}
+
 
 // NewESIndexClient creates a new IndexClient that used ElasticSearch.
 func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
@@ -247,6 +266,7 @@ func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 		cfg,
 		client,
 	}
+	registerMetrics()
 	return indexClient, nil
 }
 
@@ -300,6 +320,6 @@ func newES(cfg Config) (*elastic.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	registerMetrics()
 	return client, nil
 }
