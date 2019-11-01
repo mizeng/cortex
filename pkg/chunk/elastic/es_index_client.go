@@ -251,11 +251,6 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	return nil
 }
 
-func registerMetrics() {
-	esRequestDuration.Register()
-}
-
-
 // NewESIndexClient creates a new IndexClient that used ElasticSearch.
 func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 	client, err := newES(cfg)
@@ -319,6 +314,6 @@ func newES(cfg Config) (*elastic.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	registerMetrics()
+	esRequestDuration.Register()
 	return client, nil
 }
