@@ -34,6 +34,10 @@ var esRequestDuration = instrument.NewHistogramCollector(prometheus.NewHistogram
 	Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
 }, []string{"operation", "status_code"}))
 
+func init() {
+	esRequestDuration.Register()
+}
+
 // Config for a BoltDB index client.
 type Config struct {
 	Address       string `yaml:"address"`
@@ -251,11 +255,6 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	return nil
 }
 
-func registerMetrics() {
-	esRequestDuration.Register()
-}
-
-
 // NewESIndexClient creates a new IndexClient that used ElasticSearch.
 func NewESIndexClient(cfg Config) (chunk.IndexClient, error) {
 	client, err := newES(cfg)
@@ -319,6 +318,5 @@ func newES(cfg Config) (*elastic.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	registerMetrics()
 	return client, nil
 }
