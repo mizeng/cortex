@@ -81,7 +81,7 @@ func (a s3ObjectClient) getChunk(ctx context.Context, decodeContext *chunk.Decod
 		namespace = "defaultns"
 	}
 	key := c.ExternalKey()
-	bucket := a.bucketFromKey(key) + "/" + namespace // add namespace to bucket name
+	bucket := a.bucketFromKey(key) + "_" + namespace // add namespace to bucket name
 
 	level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("getChunk: key [%s], bucket [%s]\n", key, bucket))
 
@@ -152,7 +152,7 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 	return instrument.CollectedRequest(ctx, "S3.PutObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		_, err := a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
 			Body:   bytes.NewReader(buf),
-			Bucket: aws.String(a.bucketFromKey(key) + "/" + namespace),
+			Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
 			Key:    aws.String(key),
 		})
 		return err
