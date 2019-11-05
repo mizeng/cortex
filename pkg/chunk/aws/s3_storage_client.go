@@ -186,7 +186,8 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 				LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
 					Rules: []*s3.LifecycleRule{
 						{Status: aws.String(s3.ExpirationStatusEnabled),
-							Expiration: &s3.LifecycleExpiration{Days: aws.Int64(1)}},
+							Expiration: &s3.LifecycleExpiration{Days: aws.Int64(1)},
+							Filter: &s3.LifecycleRuleFilter{Prefix: aws.String("")}},
 					},
 				},
 			})
