@@ -167,6 +167,7 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 		// if not found bucket, create one
 		if !foundBucket {
 			_, err = a.S3.CreateBucket(&s3.CreateBucketInput{
+				CreateBucketConfiguration: &s3.CreateBucketConfiguration{LocationConstraint: aws.String("")},
 				Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
 			})
 
