@@ -177,6 +177,7 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 			if err != nil {
 				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: create bucket [%s] failed\n", desiredBucket))
 			}
+			return err
 		}
 
 		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
