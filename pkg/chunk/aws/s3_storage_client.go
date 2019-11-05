@@ -154,7 +154,29 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 
 func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, buf []byte) error {
 	return instrument.CollectedRequest(ctx, "S3.PutObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
-		_, err := a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
+		desiredBucket := a.bucketFromKey(key) + "_" + namespace
+		foundBucket := false
+		// check if bucket exists or not
+		existBuckets, err := a.S3.ListBuckets(&s3.ListBucketsInput{})
+		for _, b := range existBuckets.Buckets {
+			bucket := aws.StringValue(b.Name)
+			if bucket == desiredBucket {
+				foundBucket = true
+				break
+			}
+		}
+
+		level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: bucket [%s], found [%t]\n", desiredBucket, foundBucket))
+
+
+		// if not found bucket, create one
+		if !foundBucket {
+			a.S3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
+			})
+		}
+
+		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
 			Body:   bytes.NewReader(buf),
 			Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
 			Key:    aws.String(key),
