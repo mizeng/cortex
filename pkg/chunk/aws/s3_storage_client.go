@@ -168,12 +168,15 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 
 		level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: bucket [%s], found [%t]\n", desiredBucket, foundBucket))
 
-
 		// if not found bucket, create one
 		if !foundBucket {
-			a.S3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+			_, err = a.S3.CreateBucket(&s3.CreateBucketInput{
 				Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
 			})
+
+			if err != nil {
+				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: create bucket [%s] failed\n", desiredBucket))
+			}
 		}
 
 		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
