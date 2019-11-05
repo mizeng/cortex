@@ -170,6 +170,8 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 
 		// if not found bucket, create one
 		if !foundBucket {
+			level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: creating bucket [%s]\n", desiredBucket))
+
 			_, err = a.S3.CreateBucket(&s3.CreateBucketInput{
 				CreateBucketConfiguration: &s3.CreateBucketConfiguration{LocationConstraint: aws.String("")},
 				Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
@@ -180,7 +182,10 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 				return err
 			}
 
-			_, err = a.S3.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+			level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: setting expiration on bucket [%s]\n", desiredBucket))
+
+			// set expiration, default is 1 day
+			result, err := a.S3.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
 				Bucket:                 aws.String(a.bucketFromKey(key) + "_" + namespace),
 				LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
 					Rules: []*s3.LifecycleRule{
@@ -194,6 +199,10 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: set expiracy on bucket [%s] failed\n", desiredBucket))
 				return err
 			}
+
+			level.Info(logUtil.Logger).Log("msg", "putS3Chunk: setting expiration on bucket with result:\n")
+			level.Info(logUtil.Logger).Log("msg", result)
+
 		}
 
 		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
