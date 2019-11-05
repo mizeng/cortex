@@ -175,6 +175,21 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: create bucket [%s] failed\n", desiredBucket))
 				return err
 			}
+
+			_, err = a.S3.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+				Bucket:                 aws.String(a.bucketFromKey(key) + "_" + namespace),
+				LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+					Rules: []*s3.LifecycleRule{
+						{Status: aws.String(s3.ExpirationStatusEnabled),
+							Expiration: &s3.LifecycleExpiration{Days: aws.Int64(1)}},
+					},
+				},
+			})
+
+			if err != nil {
+				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: set expiracy on bucket [%s] failed\n", desiredBucket))
+				return err
+			}
 		}
 
 		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
