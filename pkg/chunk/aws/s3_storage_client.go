@@ -182,6 +182,7 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 				return err
 			}
 
+			/* below seems not working in Ceph S3 Object Store
 			level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: setting expiration on bucket [%s]\n", desiredBucket))
 
 			// set expiration, default is 1 day
@@ -203,7 +204,7 @@ func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, b
 
 			level.Info(logUtil.Logger).Log("msg", "putS3Chunk: setting expiration on bucket with result:\n")
 			level.Info(logUtil.Logger).Log("msg", result)
-
+			*/
 		}
 
 		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
