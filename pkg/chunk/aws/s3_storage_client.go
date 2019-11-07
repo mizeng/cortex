@@ -83,7 +83,7 @@ func (a s3ObjectClient) getChunk(ctx context.Context, decodeContext *chunk.Decod
 	key := c.ExternalKey()
 	bucket := a.bucketFromKey(key) + "_" + namespace // add namespace to bucket name
 
-	level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("getChunk: key [%s], bucket [%s]\n", key, bucket))
+	level.Debug(logUtil.Logger).Log("msg", fmt.Sprintf("getChunk: key [%s], bucket [%s]\n", key, bucket))
 
 	err := instrument.CollectedRequest(ctx, "S3.GetObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		var err error
@@ -151,63 +151,72 @@ func (a s3ObjectClient) PutChunks(ctx context.Context, chunks []chunk.Chunk) err
 func (a s3ObjectClient) putS3Chunk(ctx context.Context, namespace, key string, buf []byte) error {
 	return instrument.CollectedRequest(ctx, "S3.PutObject", s3RequestDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		desiredBucket := a.bucketFromKey(key) + "_" + namespace
-		foundBucket := false
-		// check if bucket exists or not
-		existBuckets, err := a.S3.ListBuckets(&s3.ListBucketsInput{})
-		for _, b := range existBuckets.Buckets {
-			bucket := aws.StringValue(b.Name)
-			if bucket == desiredBucket {
-				foundBucket = true
-				break
-			}
-		}
 
-		level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: bucket [%s], found [%t]\n", desiredBucket, foundBucket))
+		level.Debug(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: bucket [%s]\n", desiredBucket))
 
-		// if not found bucket, create one
-		if !foundBucket {
-			level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: creating bucket [%s]\n", desiredBucket))
-
-			_, err = a.S3.CreateBucket(&s3.CreateBucketInput{
-				CreateBucketConfiguration: &s3.CreateBucketConfiguration{LocationConstraint: aws.String("")},
-				Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
-			})
-
-			if err != nil {
-				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: create bucket [%s] failed\n", desiredBucket))
-				return err
-			}
-
-			/* below seems not working in Ceph S3 Object Store
-			level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: setting expiration on bucket [%s]\n", desiredBucket))
-
-			// set expiration, default is 1 day
-			result, err := a.S3.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
-				Bucket:                 aws.String(a.bucketFromKey(key) + "_" + namespace),
-				LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-					Rules: []*s3.LifecycleRule{
-						{Status: aws.String(s3.ExpirationStatusEnabled),
-							Expiration: &s3.LifecycleExpiration{Days: aws.Int64(1)},
-							Filter: &s3.LifecycleRuleFilter{Prefix: aws.String("")}},
-					},
-				},
-			})
-
-			if err != nil {
-				level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: set expiracy on bucket [%s] failed\n", desiredBucket))
-				return err
-			}
-
-			level.Info(logUtil.Logger).Log("msg", "putS3Chunk: setting expiration on bucket with result:\n")
-			level.Info(logUtil.Logger).Log("msg", result)
-			*/
-		}
-
-		_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
+		_, err := a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
 			Body:   bytes.NewReader(buf),
 			Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
 			Key:    aws.String(key),
 		})
+
+		if err != nil { // most of the error will be "bucket does not exist". if so, we create the bucket and try flush again
+			foundBucket := false
+			// check if bucket exists or not
+			existBuckets, err := a.S3.ListBuckets(&s3.ListBucketsInput{})
+			for _, b := range existBuckets.Buckets {
+				bucket := aws.StringValue(b.Name)
+				if bucket == desiredBucket {
+					foundBucket = true
+					break
+				}
+			}
+			// if not found bucket, create one
+			if !foundBucket {
+				level.Debug(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: creating bucket [%s]\n", desiredBucket))
+
+				_, err = a.S3.CreateBucket(&s3.CreateBucketInput{
+					CreateBucketConfiguration: &s3.CreateBucketConfiguration{LocationConstraint: aws.String("")},
+					Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
+				})
+
+				if err != nil {
+					level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: create bucket [%s] failed\n", desiredBucket))
+					return err
+				}
+
+				/* below seems not working in Ceph S3 Object Store
+				level.Info(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: setting expiration on bucket [%s]\n", desiredBucket))
+
+				// set expiration, default is 1 day
+				result, err := a.S3.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+					Bucket:                 aws.String(a.bucketFromKey(key) + "_" + namespace),
+					LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+						Rules: []*s3.LifecycleRule{
+							{Status: aws.String(s3.ExpirationStatusEnabled),
+								Expiration: &s3.LifecycleExpiration{Days: aws.Int64(1)},
+								Filter: &s3.LifecycleRuleFilter{Prefix: aws.String("")}},
+						},
+					},
+				})
+
+				if err != nil {
+					level.Error(logUtil.Logger).Log("msg", fmt.Sprintf("putS3Chunk: set expiracy on bucket [%s] failed\n", desiredBucket))
+					return err
+				}
+
+				level.Info(logUtil.Logger).Log("msg", "putS3Chunk: setting expiration on bucket with result:\n")
+				level.Info(logUtil.Logger).Log("msg", result)
+				*/
+
+				// try put object again
+				_, err = a.S3.PutObjectWithContext(ctx, &s3.PutObjectInput{
+					Body:   bytes.NewReader(buf),
+					Bucket: aws.String(a.bucketFromKey(key) + "_" + namespace),
+					Key:    aws.String(key),
+				})
+			}
+		}
 		return err
 	})
 }
