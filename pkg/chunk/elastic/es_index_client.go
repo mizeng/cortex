@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/instrument"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -200,8 +201,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 	}
 
 	// Build the query
-	baseQuery := e.client.Search().
-		Index(query.TableName).
+	baseQuery := e.client.Scroll(query.TableName).Size(e.cfg.MaxFetchDocs).
 		Query(hashTermQuery)
 	if valueTermQuery != nil {
 		baseQuery = baseQuery.Query(valueTermQuery)
@@ -210,39 +210,20 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 		baseQuery = baseQuery.Query(rangeQuery)
 	}
 
-	// Search
-	searchResult, err := baseQuery.
-		Do(ctx) // execute
-
-	if err != nil {
-		level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
-		return nil
-	}
-	if searchResult == nil || searchResult.Hits == nil {
-		return nil
-	}
-
-	totalResultNum := searchResult.Hits.TotalHits
-	processedResultNum := int64(0)
-	searchResult = nil
-
-	err = instrument.CollectedRequest(ctx, "ES.Query", esRequestDuration,
+	err := instrument.CollectedRequest(ctx, "ES.Query", esRequestDuration,
 		instrument.ErrorCode, func(ctx context.Context) error {
-			var finalErr error
 			for {
-				if processedResultNum > totalResultNum {
+				// Search
+				searchResult, err := baseQuery.
+					Do(ctx) // execute
+				if err == io.EOF {
 					break
 				}
-				processedResultNum += int64(e.cfg.MaxFetchDocs)
-				searchResult, err := baseQuery.
-					Sort("range", true). // sort by "range" field, ascending
-					From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
-					Do(ctx) // execute
-				if err != nil {
-					finalErr = err
-					continue
-				}
 
+				if err != nil {
+					level.Error(util.Logger).Log("msg", fmt.Sprintf("Query in index %s met error!", query.TableName))
+					return nil
+				}
 				var batch readBatch
 				var ttyp IndexEntry
 				for _, item := range searchResult.Each(reflect.TypeOf(ttyp)) {
@@ -257,7 +238,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 					}
 				}
 			}
-			return finalErr
+			return nil
 		})
 
 	if err != nil {
