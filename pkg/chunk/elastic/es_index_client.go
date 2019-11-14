@@ -233,6 +233,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 				if processedResultNum > totalResultNum {
 					break
 				}
+				processedResultNum += int64(e.cfg.MaxFetchDocs)
 				searchResult, err := baseQuery.
 					Sort("range", true). // sort by "range" field, ascending
 					From(int(processedResultNum)).Size(e.cfg.MaxFetchDocs).
@@ -241,7 +242,6 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 					finalErr = err
 					continue
 				}
-				processedResultNum += int64(e.cfg.MaxFetchDocs)
 
 				var batch readBatch
 				var ttyp IndexEntry
