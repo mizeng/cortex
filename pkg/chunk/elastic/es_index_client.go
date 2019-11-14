@@ -239,6 +239,7 @@ func (e *esClient) query(ctx context.Context, query chunk.IndexQuery, callback f
 					Do(ctx) // execute
 				if err != nil {
 					finalErr = err
+					continue
 				}
 				processedResultNum += int64(e.cfg.MaxFetchDocs)
 
